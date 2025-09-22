@@ -27,7 +27,9 @@ A FastAPI application that listens to drchrono webhooks, verifies them, and rela
    Edit `.env` and set your values:
    ```env
    WEBHOOK_SECRET_TOKEN=your-drchrono-webhook-secret-token-here
-   RELAY_URL=https://your-destination-url.com/webhook
+   RELAY_URL_1=https://your-destination-url-1.com/webhook
+   RELAY_URL_2=https://your-destination-url-2.com/webhook
+   RELAY_URL_3=https://your-destination-url-3.com/webhook
    RELAY_TIMEOUT=30
    PORT=8000
    ```
@@ -57,8 +59,8 @@ Webhook verification endpoint for drchrono. This endpoint:
 Main webhook handler that:
 - Receives webhook data from drchrono
 - Extracts important headers (X-drchrono-event, X-drchrono-signature, X-drchrono-delivery)
-- Relays the data to your configured destination URL
-- Returns appropriate response to drchrono
+- Relays the data to all 3 configured destination URLs concurrently
+- Returns appropriate response to drchrono with status of all relay attempts
 
 ### GET `/webhook/status`
 Configuration status endpoint that shows whether your webhook is properly configured.
@@ -68,7 +70,9 @@ Configuration status endpoint that shows whether your webhook is properly config
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `WEBHOOK_SECRET_TOKEN` | Your drchrono webhook secret token | `your-secret-token-here` |
-| `RELAY_URL` | Destination URL to relay webhook data | `https://your-destination-url.com/webhook` |
+| `RELAY_URL_1` | First destination URL to relay webhook data | `https://your-destination-url-1.com/webhook` |
+| `RELAY_URL_2` | Second destination URL to relay webhook data | `https://your-destination-url-2.com/webhook` |
+| `RELAY_URL_3` | Third destination URL to relay webhook data | `https://your-destination-url-3.com/webhook` |
 | `RELAY_TIMEOUT` | Timeout for relay requests in seconds | `30` |
 | `PORT` | Port to run the application on | `8000` |
 
@@ -93,11 +97,11 @@ When relaying webhook data, the application sends a POST request with the follow
 
 ## Usage
 
-1. Set up your environment variables with your drchrono webhook secret and destination URL
+1. Set up your environment variables with your drchrono webhook secret and 3 destination URLs
 2. Run the application
 3. Configure your drchrono webhook to point to `http://your-domain.com/webhook`
 4. Use the verification endpoint to verify your webhook
-5. The application will automatically relay incoming webhook data to your configured destination
+5. The application will automatically relay incoming webhook data to all 3 configured destinations concurrently
 
 ## Logging
 

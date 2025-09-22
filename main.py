@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import json
@@ -17,8 +18,13 @@ app = FastAPI(title="Cameo Webhook Listener", version="1.0.0")
 
 # Configuration - these should be set as environment variables
 WEBHOOK_SECRET_TOKEN = os.getenv("WEBHOOK_SECRET_TOKEN", "your-secret-token-here")
-RELAY_URL = os.getenv("RELAY_URL", "https://your-destination-url.com/webhook")
+RELAY_URL_1 = os.getenv("RELAY_URL_1", "https://your-destination-url-1.com/webhook")
+RELAY_URL_2 = os.getenv("RELAY_URL_2", "https://your-destination-url-2.com/webhook")
+RELAY_URL_3 = os.getenv("RELAY_URL_3", "https://your-destination-url-3.com/webhook")
 RELAY_TIMEOUT = int(os.getenv("RELAY_TIMEOUT", "30"))
+
+# Collect all relay URLs
+RELAY_URLS = [RELAY_URL_1, RELAY_URL_2, RELAY_URL_3]
 
 @app.get("/")
 async def health_check():
@@ -97,35 +103,60 @@ async def webhook_handler(request: Request):
             "body": json_body
         }
         
-        # Relay the webhook data to the destination URL
+        # Relay the webhook data to all destination URLs
         async with httpx.AsyncClient(timeout=RELAY_TIMEOUT) as client:
-            logger.info(f"Relaying webhook data to: {RELAY_URL}")
+            relay_results = []
             
-            response = await client.post(
-                RELAY_URL,
-                json=relay_data,
-                headers={
-                    "Content-Type": "application/json",
-                    "User-Agent": "Cameo-Webhook-Relay/1.0"
-                }
-            )
+            # Send to all relay URLs concurrently
+            tasks = []
+            for i, relay_url in enumerate(RELAY_URLS, 1):
+                logger.info(f"Preparing to relay webhook data to URL {i}: {relay_url}")
+                task = client.post(
+                    relay_url,
+                    json=relay_data,
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "Cameo-Webhook-Relay/1.0"
+                    }
+                )
+                tasks.append(task)
             
-            logger.info(f"Relay response status: {response.status_code}")
+            # Wait for all relay requests to complete
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Return success response to drchrono
+            # Process results
+            for i, response in enumerate(responses, 1):
+                if isinstance(response, Exception):
+                    logger.error(f"Relay to URL {i} failed: {str(response)}")
+                    relay_results.append({
+                        "url_index": i,
+                        "url": RELAY_URLS[i-1],
+                        "status": "error",
+                        "error": str(response)
+                    })
+                else:
+                    logger.info(f"Relay to URL {i} response status: {response.status_code}")
+                    relay_results.append({
+                        "url_index": i,
+                        "url": RELAY_URLS[i-1],
+                        "status": "success",
+                        "status_code": response.status_code
+                    })
+            
+            # Return success response to drchrono with all relay statuses
             return JSONResponse(
                 status_code=200,
                 content={
                     "status": "success",
-                    "message": "Webhook received and relayed",
-                    "relay_status": response.status_code,
+                    "message": "Webhook received and relayed to all destinations",
+                    "relay_results": relay_results,
                     "event": drchrono_event,
                     "delivery_id": drchrono_delivery
                 }
             )
             
     except httpx.TimeoutException:
-        logger.error(f"Timeout while relaying to {RELAY_URL}")
+        logger.error(f"Timeout while relaying to one or more URLs")
         # Still return 200 to drchrono to avoid retries
         return JSONResponse(
             status_code=200,
@@ -157,7 +188,20 @@ async def webhook_status():
     """
     return {
         "webhook_secret_configured": bool(WEBHOOK_SECRET_TOKEN and WEBHOOK_SECRET_TOKEN != "your-secret-token-here"),
-        "relay_url_configured": bool(RELAY_URL and RELAY_URL != "https://your-destination-url.com/webhook"),
+        "relay_urls": {
+            "url_1": {
+                "configured": bool(RELAY_URL_1 and RELAY_URL_1 != "https://your-destination-url-1.com/webhook"),
+                "url": RELAY_URL_1
+            },
+            "url_2": {
+                "configured": bool(RELAY_URL_2 and RELAY_URL_2 != "https://your-destination-url-2.com/webhook"),
+                "url": RELAY_URL_2
+            },
+            "url_3": {
+                "configured": bool(RELAY_URL_3 and RELAY_URL_3 != "https://your-destination-url-3.com/webhook"),
+                "url": RELAY_URL_3
+            }
+        },
         "relay_timeout": RELAY_TIMEOUT
     }
 
